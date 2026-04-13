@@ -196,6 +196,12 @@ All endpoints except `/health` require `Authorization: Bearer <API_SECRET_KEY>`.
 
 ---
 
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+---
+
 ## Getting API keys
 
 - **OpenAI** — [platform.openai.com](https://platform.openai.com)
