@@ -1,0 +1,35 @@
+# Claude Code
+.claude/
+
+# Secrets
+.env
+*.env
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Uploads (user data)
+backend/uploads/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Node
+node_modules/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
