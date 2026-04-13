@@ -1,86 +1,120 @@
-# VectorlessRAG  (Powered by PageIndex)
+# VectorlessRAG (Powered by PageIndex)
 
-A document Q&A app that does **RAG without embeddings**. Upload a PDF, ask questions, get cited answers — no vector database, no chunking, no embedding model.
+A document Q&A app that does Retrieval-Augmented Generation (RAG) **without embeddings**.
 
-Instead of the traditional embed → chunk → similarity search pipeline, it uses [PageIndex](https://pageindex.ai) to build a hierarchical tree of the document structure, then uses GPT-4o to navigate that tree and retrieve the exact sections needed to answer each question.
+Upload a PDF, ask questions, and get **fully cited answers** without vector databases, chunking, or embedding models.
+
+Instead of the traditional *embed → chunk → similarity search* pipeline, this system uses **PageIndex** to construct a hierarchical document tree, then leverages **GPT-4o** to intelligently navigate that structure and retrieve precise sections.
 
 ---
 
-## How it works
+## 🚀 Core Idea
+
+Traditional RAG is brute force.
+
+VectorlessRAG is **structure-aware reasoning**.
+
+You are not searching text.
+You are navigating a **document like a human would**.
+
+---
+
+🌐 Live Demo  
+👉 [Try it here](https://vectorlessragusingpageindex.netlify.app)  
+
+
+---
+
+## 🧠 How It Works
 
 ```
 PDF Upload
     │
     ▼
-PageIndex API ──► Builds a hierarchical document tree
+PageIndex API ──► Builds hierarchical document tree
                   (chapters → sections → subsections)
     │
     ▼
-User asks a question
+User Question
     │
     ▼
 Step 1 — Tree Search
-  GPT-4o reads the compressed tree (like a table of contents)
-  and picks the node IDs most likely to contain the answer
+  GPT-4o reads compressed tree (like a TOC)
+  and selects relevant node IDs
     │
     ▼
 Step 2 — Node Retrieval
-  Full text of selected nodes is fetched from the tree
+  Full text of selected nodes is fetched
     │
     ▼
 Step 3 — Cited Answer
-  GPT-4o generates a streamed answer using only
-  the retrieved context, citing section + page for every claim
+  GPT-4o generates answer using ONLY retrieved context
+  with section + page citations
     │
     ▼
-Sources highlighted in the document tree on the left
+UI highlights sources in the document tree
 ```
 
 ---
 
-## Tech stack
+## ⚙️ Tech Stack
 
-| Layer | Tech |
-|---|---|
-| Frontend | React 18 + TypeScript (CRA), Tailwind CSS |
-| Backend | FastAPI + Python 3.11 |
-| Document indexing | [PageIndex](https://pageindex.ai) |
-| LLM | OpenAI GPT-4o (tree search + answer generation) |
-| Database | SQLite (WAL mode) |
-| Auth | Bearer token (`API_SECRET_KEY`) |
-| Rate limiting | slowapi (10/min upload, 20/min query) |
-
----
-
-## Features
-
-- **No embeddings** — zero vector DB, zero embedding API calls
-- **Tree-based retrieval** — LLM navigates document structure to find relevant sections
-- **Streamed answers** — response streams token by token via SSE
-- **Source highlighting** — retrieved sections glow in the structure panel
-- **Session-only** — all documents wiped on page refresh (no persistent user data)
-- **File validation** — magic bytes check, 20MB cap, PDF-only
-- **Structured logging** — all requests and errors logged server-side
+| Layer             | Tech                                 |
+| ----------------- | ------------------------------------ |
+| Frontend          | React 18 + TypeScript + Tailwind CSS |
+| Backend           | FastAPI + Python 3.11                |
+| Document Indexing | PageIndex                            |
+| LLM               | GPT-4o                               |
+| Database          | SQLite (WAL mode)                    |
+| Auth              | Bearer Token                         |
+| Rate Limiting     | slowapi                              |
 
 ---
 
-## Project structure
+## ✨ Features
+
+* **No embeddings**
+  Zero vector DB. Zero embedding API calls.
+
+* **Tree-based retrieval**
+  LLM navigates document structure instead of similarity search.
+
+* **Streaming responses**
+  Token-by-token output via SSE.
+
+* **Source highlighting**
+  Retrieved sections glow in the UI tree.
+
+* **Session-only storage**
+  No persistent user data. Everything resets on refresh.
+
+* **Strict file validation**
+
+  * PDF only
+  * Magic byte check
+  * 20MB cap
+
+* **Structured logging**
+  Full server-side request + error logging.
+
+---
+
+## 📁 Project Structure
 
 ```
 VectorlessRAG/
 ├── backend/
-│   ├── main.py          # FastAPI app — all routes, RAG pipeline
+│   ├── main.py
 │   ├── requirements.txt
-│   └── .env             # OPENAI_API_KEY, PAGEINDEX_API_KEY, API_SECRET_KEY
+│   └── .env
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx      # Main React app — upload, tree view, chat
-│   │   ├── App.css      # Full custom design system (dark navy + blue)
-│   │   └── components/
-│   │       └── ui/
-│   │           ├── ai-loader.tsx   # Animated indexing overlay
-│   │           └── ai-loader.css
-│   ├── .env             # REACT_APP_API_URL, REACT_APP_API_KEY
+│   │   ├── App.tsx
+│   │   ├── App.css
+│   │   └── components/ui/
+│   │       ├── ai-loader.tsx
+│   │       └── ai-loader.css
+│   ├── .env
 │   └── .env.example
 ├── .gitignore
 └── README.md
@@ -88,7 +122,7 @@ VectorlessRAG/
 
 ---
 
-## Running locally
+## 🧪 Running Locally
 
 ### Backend
 
@@ -100,15 +134,20 @@ pip install -r requirements.txt
 ```
 
 Create `backend/.env`:
+
 ```
 OPENAI_API_KEY=your_openai_key
 PAGEINDEX_API_KEY=your_pageindex_key
-API_SECRET_KEY=your_secret_key   # any random string
+API_SECRET_KEY=your_secret_key
 ```
+
+Run:
 
 ```bash
 uvicorn main:app --reload
 ```
+
+---
 
 ### Frontend
 
@@ -118,46 +157,79 @@ npm install
 ```
 
 Create `frontend/.env`:
+
 ```
 REACT_APP_API_URL=http://localhost:8000
-REACT_APP_API_KEY=your_secret_key   # must match API_SECRET_KEY above
+REACT_APP_API_KEY=your_secret_key
 ```
+
+Run:
 
 ```bash
 npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open:
+
+```
+http://localhost:3000
+```
 
 ---
 
-## Deploying
+## 🌐 Deployment
 
-### Backend → [Render](https://render.com) (free)
+### Live Setup
 
-| Setting | Value |
-|---|---|
-| Root Directory | `backend` |
-| Build Command | `pip install -r requirements.txt` |
-| Start Command | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+* **Frontend:** Hosted on Netlify
+* **Backend:** Hosted on Render
 
-Environment variables to set on Render:
+---
+
+### Backend → Render
+
+* Root Directory: `backend`
+* Build:
+
+```bash
+pip install -r requirements.txt
 ```
-OPENAI_API_KEY
-PAGEINDEX_API_KEY
-API_SECRET_KEY
-ALLOWED_ORIGINS=https://your-app.netlify.app
+
+* Start:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
-### Frontend → [Netlify](https://netlify.com) (free)
+**Environment Variables:**
 
-| Setting | Value |
-|---|---|
-| Base directory | `frontend` |
-| Build command | `npm run build` |
-| Publish directory | `frontend/build` |
+```
+OPENAI_API_KEY=your_openai_key
+PAGEINDEX_API_KEY=your_pageindex_key
+API_SECRET_KEY=your_secret_key
+ALLOWED_ORIGINS=https://vectorlessragusingpageindex.netlify.app
 
-Environment variables to set on Netlify:
+```
+
+---
+
+### Frontend → Netlify
+
+* Base Directory: `frontend`
+* Build:
+
+```bash
+npm run build
+```
+
+* Publish:
+
+```
+frontend/build
+```
+
+**Environment Variables:**
+
 ```
 REACT_APP_API_URL=https://your-backend.onrender.com
 REACT_APP_API_KEY=your_secret_key
@@ -165,44 +237,28 @@ REACT_APP_API_KEY=your_secret_key
 
 ---
 
-## API endpoints
+## 🔐 Security
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Health check |
-| `POST` | `/documents/upload` | Upload a PDF (rate: 10/min) |
-| `GET` | `/documents` | List all documents |
-| `GET` | `/documents/{id}` | Get document + tree |
-| `GET` | `/documents/{id}/status` | Polling status during indexing |
-| `GET` | `/documents/{id}/history` | Chat history |
-| `POST` | `/query` | Stream a RAG answer (rate: 20/min) |
-| `DELETE` | `/documents` | Clear all documents |
-| `DELETE` | `/documents/{id}` | Delete one document |
-
-All endpoints except `/health` require `Authorization: Bearer <API_SECRET_KEY>`.
+* Bearer token authentication on all endpoints
+* Strict file validation (PDF + magic bytes + size cap)
+* Pydantic schema validation
+* Prompt injection protection via role separation
+* Error masking (full logs server-side only)
+* CORS locked via `ALLOWED_ORIGINS`
+* SQLite WAL mode for safe concurrency
+* Auto-recovery of failed indexing jobs
 
 ---
 
-## Security
+## 📜 License
 
-- Bearer token auth on every endpoint
-- File validation: extension + `%PDF` magic bytes + 20MB size cap
-- Pydantic input validation: UUID pattern, 2000 char question limit, 20 item history cap, typed `role` field
-- Prompt injection mitigation: explicit `[SYSTEM]/[QUESTION]/[CONTEXT]/[ANSWER]` role separation
-- Error details stripped from client responses — full traces logged server-side only
-- CORS locked to configured origins via `ALLOWED_ORIGINS` env var
-- SQLite WAL mode for safe concurrent reads
-- Crashed indexing tasks auto-recovered on server restart
+MIT — see `LICENSE`
 
 ---
 
-## License
+## 🔑 Getting API Keys
 
-MIT — see [LICENSE](LICENSE)
+* OpenAI → [https://platform.openai.com](https://platform.openai.com)
+* PageIndex → [https://pageindex.ai](https://pageindex.ai)
 
 ---
-
-## Getting API keys
-
-- **OpenAI** — [platform.openai.com](https://platform.openai.com)
-- **PageIndex** — [pageindex.ai](https://pageindex.ai)
