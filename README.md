@@ -1,4 +1,4 @@
-# VectorlessRAG — Powered by PageIndex
+# VectorlessRAG  (Powered by PageIndex)
 
 A document Q&A app that does **RAG without embeddings**. Upload a PDF, ask questions, get cited answers — no vector database, no chunking, no embedding model.
 
