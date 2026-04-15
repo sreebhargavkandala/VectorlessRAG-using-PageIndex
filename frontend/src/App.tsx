@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AILoader } from './components/ui/ai-loader';
+import { BeamsBackground } from './components/ui/beams-background';
 
 const API     = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const API_KEY = process.env.REACT_APP_API_KEY || '';
@@ -27,7 +28,7 @@ interface TreeNode {
 interface Document {
   id: string;
   filename: string;
-  status: 'pending' | 'indexing' | 'ready' | 'error';
+  status: 'uploading' | 'pending' | 'indexing' | 'ready' | 'error';
   page_count?: number;
   error_message?: string;
   created_at: string;
@@ -165,6 +166,13 @@ export default function App() {
     pollTimers.current[docId] = setInterval(async () => {
       try {
         const res = await apiFetch(`/documents/${docId}/status`);
+
+        if (res.status === 404) {
+          clearInterval(pollTimers.current[docId]);
+          delete pollTimers.current[docId];
+          return;
+        }
+
         const { status, page_count, error_message } = await res.json();
         setDocs(prev => prev.map(d => (d.id === docId ? { ...d, status, page_count, error_message } : d)));
 
@@ -220,20 +228,45 @@ export default function App() {
   const handleFile = useCallback(
     async (file: File) => {
       if (!file.name.toLowerCase().endsWith('.pdf')) return;
-      const form = new FormData();
-      form.append('file', file);
-      const res = await apiFetch(`/documents/upload`, { method: 'POST', body: form });
-      const { doc_id, filename } = await res.json();
-      const newDoc: Document = {
-        id: doc_id,
-        filename,
-        status: 'indexing',
+
+      // Show optimistic placeholder immediately — eliminates silent upload lag
+      const tempId = `uploading-${Date.now()}`;
+      const placeholder: Document = {
+        id: tempId,
+        filename: file.name,
+        status: 'uploading',
         created_at: new Date().toISOString(),
       };
-      setDocs(prev => [newDoc, ...prev]);
-      setSelectedDoc(newDoc);
+      setDocs(prev => [placeholder, ...prev]);
+      setSelectedDoc(placeholder);
       setMessages([]);
-      startPolling(doc_id);
+
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await apiFetch(`/documents/upload`, { method: 'POST', body: form });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setDocs(prev => prev.filter(d => d.id !== tempId));
+          setSelectedDoc(null);
+          setErrorDialog(err.detail ?? 'Upload failed. Please try again.');
+          return;
+        }
+        const { doc_id, filename } = await res.json();
+        const newDoc: Document = {
+          id: doc_id,
+          filename,
+          status: 'indexing',
+          created_at: new Date().toISOString(),
+        };
+        setDocs(prev => prev.map(d => (d.id === tempId ? newDoc : d)));
+        setSelectedDoc(newDoc);
+        startPolling(doc_id);
+      } catch {
+        setDocs(prev => prev.filter(d => d.id !== tempId));
+        setSelectedDoc(null);
+        setErrorDialog('Upload failed. Check your connection and try again.');
+      }
     },
     [startPolling],
   );
@@ -407,9 +440,6 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      {/* Ambient glow orbs */}
-      <div className="bg-orb bg-orb-1" />
-      <div className="bg-orb bg-orb-2" />
 
       {/* ── Error Dialog ── */}
       {errorDialog && (
@@ -486,10 +516,12 @@ export default function App() {
                     </div>
                     <div className="doc-meta">
                       <div className="doc-name" title={doc.filename}>{doc.filename}</div>
-                      <div className={`doc-status-pill ${doc.status}`}>
-                        {doc.status === 'indexing' && <span className="dot-pulse" />}
+                      <div className={`doc-status-pill ${doc.status === 'uploading' ? 'indexing' : doc.status}`}>
+                        {(doc.status === 'uploading' || doc.status === 'indexing') && <span className="dot-pulse" />}
                         {doc.status === 'ready'
                           ? `${doc.page_count ?? '?'} pages`
+                          : doc.status === 'uploading'
+                          ? 'uploading…'
                           : doc.status === 'indexing'
                           ? 'indexing…'
                           : doc.status}
@@ -506,22 +538,20 @@ export default function App() {
       {/* ── Main Panel ── */}
       <main className="main-panel">
         {!selectedDoc ? (
-          <div className="empty-state">
+          <BeamsBackground intensity="strong" className="!min-h-0 h-full !bg-[#050810]">
             <div className="empty-hero">
-              <div className="empty-icon-ring">
-                <GridIcon size={30} />
-              </div>
+              <div className="empty-icon-ring"><GridIcon size={30} /></div>
               <h1 className="empty-heading">Vectorless<span>RAG</span></h1>
               <p className="empty-sub">
                 Upload a PDF to start exploring.<br />
-                Tree-based retrieval — zero embeddings.
+                Tree-based retrieval · zero embeddings.
               </p>
               <button className="empty-cta" onClick={() => fileInputRef.current?.click()}>
                 <UploadIcon />
                 Upload PDF
               </button>
             </div>
-          </div>
+          </BeamsBackground>
         ) : (
           <div className="doc-view">
             {/* Top bar */}
@@ -537,11 +567,12 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <div className={`topbar-status-pill ${selectedDoc.status}`}>
-                {(selectedDoc.status === 'ready' || selectedDoc.status === 'indexing') && (
-                  <span className={`topbar-dot${selectedDoc.status === 'indexing' ? ' pulse' : ''}`} />
+              <div className={`topbar-status-pill ${selectedDoc.status === 'uploading' ? 'indexing' : selectedDoc.status}`}>
+                {(selectedDoc.status === 'ready' || selectedDoc.status === 'indexing' || selectedDoc.status === 'uploading') && (
+                  <span className={`topbar-dot${selectedDoc.status !== 'ready' ? ' pulse' : ''}`} />
                 )}
                 {selectedDoc.status === 'ready' && 'Ready'}
+                {selectedDoc.status === 'uploading' && 'Uploading'}
                 {selectedDoc.status === 'indexing' && 'Indexing'}
                 {selectedDoc.status === 'pending' && 'Pending'}
                 {selectedDoc.status === 'error' && 'Error'}
@@ -549,9 +580,9 @@ export default function App() {
             </div>
 
             {/* Content */}
-            {(selectedDoc.status === 'indexing' || selectedDoc.status === 'pending') ? (
+            {(selectedDoc.status === 'uploading' || selectedDoc.status === 'indexing' || selectedDoc.status === 'pending') ? (
               <div className="indexing-overlay">
-                <AILoader contained text="Indexing" size={160} />
+                <AILoader contained text={selectedDoc.status === 'uploading' ? 'Uploading' : 'Indexing'} size={160} />
               </div>
             ) : selectedDoc.status === 'error' ? (
               <div className="indexing-error">

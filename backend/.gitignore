@@ -104,6 +104,7 @@ cython_debug/
 # Environment variables and secrets
 .env
 .env.*
+!.env.example
 
 # SQLite database
 *.db

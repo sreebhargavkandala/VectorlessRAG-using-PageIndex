@@ -37,6 +37,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if o.strip()]
+log.info("startup CORS origins=%s auth=%s", _ALLOWED_ORIGINS, bool(os.getenv("API_SECRET_KEY")))
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,7 +59,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials | None = Security(_be
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -95,6 +96,18 @@ def init_db():
     conn.close()
 
 init_db()
+
+# ── Startup validation ────────────────────────────────────────────────────────
+def _validate_env():
+    missing = [k for k in ("OPENAI_API_KEY", "PAGEINDEX_API_KEY") if not os.getenv(k)]
+    if missing:
+        log.error("Missing required env vars: %s", ", ".join(missing))
+        raise RuntimeError(f"Missing required env vars: {', '.join(missing)}")
+
+_validate_env()
+
+# ── Cancellation registry ──────────────────────────────────────────────────────
+_cancelled_docs: set[str] = set()
 
 # ── Models ────────────────────────────────────────────────────────────────────
 class HistoryItem(BaseModel):
@@ -190,15 +203,18 @@ async def upload_document(
 
     doc_id   = str(uuid.uuid4())
     pdf_path = UPLOAD_DIR / f"{doc_id}.pdf"
-    pdf_path.write_bytes(content)
+    await asyncio.to_thread(pdf_path.write_bytes, content)
 
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO documents (id, filename, status) VALUES (?, ?, 'indexing')",
-        (doc_id, file.filename)
-    )
-    conn.commit()
-    conn.close()
+    def _insert():
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO documents (id, filename, status) VALUES (?, ?, 'indexing')",
+            (doc_id, file.filename)
+        )
+        conn.commit()
+        conn.close()
+
+    await asyncio.to_thread(_insert)
 
     log.info("upload doc_id=%s filename=%s size=%d", doc_id, file.filename, len(content))
     asyncio.create_task(index_document(doc_id, pdf_path))
@@ -207,6 +223,10 @@ async def upload_document(
 
 async def index_document(doc_id: str, pdf_path: Path):
     try:
+        if doc_id in _cancelled_docs:
+            _cancelled_docs.discard(doc_id)
+            return
+
         client = _pi_client()
 
         result           = await asyncio.to_thread(client.submit_document, str(pdf_path))
@@ -218,6 +238,12 @@ async def index_document(doc_id: str, pdf_path: Path):
         status_result = {}
         while time.time() - start < max_wait:
             await asyncio.sleep(5)
+
+            if doc_id in _cancelled_docs:
+                _cancelled_docs.discard(doc_id)
+                log.info("index_document cancelled doc_id=%s", doc_id)
+                return
+
             status_result = await asyncio.to_thread(client.get_document, pageindex_doc_id)
             status = status_result.get("status")
             log.info("pageindex poll doc_id=%s status=%s", doc_id, status)
@@ -227,6 +253,11 @@ async def index_document(doc_id: str, pdf_path: Path):
                 raise RuntimeError("PageIndex processing failed")
         else:
             raise TimeoutError("Document indexing timed out after 10 minutes")
+
+        if doc_id in _cancelled_docs:
+            _cancelled_docs.discard(doc_id)
+            log.info("index_document cancelled post-complete doc_id=%s", doc_id)
+            return
 
         tree_result = await asyncio.to_thread(
             lambda: client.get_tree(pageindex_doc_id, node_summary=True)
@@ -307,9 +338,13 @@ def get_status(doc_id: str):
 @app.post("/query")
 @limiter.limit("20/minute")
 async def query_document(request: Request, req: QueryRequest, _=Depends(verify_token)):  # request required by slowapi
-    conn = get_db()
-    doc  = conn.execute("SELECT * FROM documents WHERE id=?", (req.doc_id,)).fetchone()
-    conn.close()
+    def _fetch_doc():
+        conn = get_db()
+        row  = conn.execute("SELECT * FROM documents WHERE id=?", (req.doc_id,)).fetchone()
+        conn.close()
+        return row
+
+    doc = await asyncio.to_thread(_fetch_doc)
 
     if not doc:
         raise HTTPException(404, "Document not found")
@@ -325,6 +360,7 @@ async def query_document(request: Request, req: QueryRequest, _=Depends(verify_t
     async def stream():
         from openai import AsyncOpenAI
         oai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        done_sent = False
 
         try:
             # ── Step 1: Tree search ───────────────────────────────────────────
@@ -401,24 +437,33 @@ async def query_document(request: Request, req: QueryRequest, _=Depends(verify_t
                     yield f"data: {json.dumps({'type': 'delta', 'text': delta})}\n\n"
 
             # Persist
-            conn2 = get_db()
-            conn2.execute(
-                "INSERT INTO messages (doc_id, role, content) VALUES (?, 'user', ?)",
-                (req.doc_id, question)
-            )
-            conn2.execute(
-                "INSERT INTO messages (doc_id, role, content, source_nodes) VALUES (?, 'assistant', ?, ?)",
-                (req.doc_id, full_answer, json.dumps(sources))
-            )
-            conn2.commit()
-            conn2.close()
+            _ans, _src, _did, _q = full_answer, json.dumps(sources), req.doc_id, question
+            def _persist():
+                conn2 = get_db()
+                conn2.execute(
+                    "INSERT INTO messages (doc_id, role, content) VALUES (?, 'user', ?)",
+                    (_did, _q)
+                )
+                conn2.execute(
+                    "INSERT INTO messages (doc_id, role, content, source_nodes) VALUES (?, 'assistant', ?, ?)",
+                    (_did, _ans, _src)
+                )
+                conn2.commit()
+                conn2.close()
+            await asyncio.to_thread(_persist)
 
             log.info("query_done doc_id=%s answer_len=%d", req.doc_id, len(full_answer))
+            done_sent = True
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
             log.error("query_stream error doc_id=%s error=%s", req.doc_id, e, exc_info=True)
+            done_sent = True
             yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred. Please try again.'})}\n\n"
+
+        finally:
+            if not done_sent:
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -449,6 +494,7 @@ def clear_all_documents():
     conn.commit()
     conn.close()
     for doc_id in doc_ids:
+        _cancelled_docs.add(doc_id)
         pdf = UPLOAD_DIR / f"{doc_id}.pdf"
         if pdf.exists():
             pdf.unlink()
@@ -458,6 +504,7 @@ def clear_all_documents():
 
 @app.delete("/documents/{doc_id}", dependencies=[Depends(verify_token)])
 def delete_document(doc_id: str):
+    _cancelled_docs.add(doc_id)
     conn = get_db()
     conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
     conn.execute("DELETE FROM messages WHERE doc_id=?", (doc_id,))

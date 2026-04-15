@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bitcount+Grid+Double:wght@100..900&family=Bungee+Shade&family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -22,6 +22,7 @@
   --blue-2:      #60a5fa;
   --blue-2-dim:  rgba(96,165,250,0.08);
   --red:         #f87171;
+  --font-display: 'Bitcount Grid Double', 'DM Serif Display', Georgia, serif;
   --font-serif:  'DM Serif Display', Georgia, serif;
   --font-sans:   'Inter', system-ui, sans-serif;
   --font-mono:   'DM Mono', 'Fira Code', monospace;
@@ -123,7 +124,7 @@ body {
 }
 
 .brand-name {
-  font-family: var(--font-sans);
+  font-family: var(--font-display);
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
@@ -402,8 +403,8 @@ body {
 }
 
 .empty-heading {
-  font-family: var(--font-serif);
-  font-size: 40px;
+  font-family: var(--font-display);
+  font-size: 62px;
   color: var(--text);
   line-height: 1.1;
   letter-spacing: -0.5px;
